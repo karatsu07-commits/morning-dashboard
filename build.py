@@ -123,22 +123,67 @@ def fx_card(title, sub, icon, vals):
 
 
 # ───────────────────────────────────────────────
-#  サンプルKPI（金属・原油・SOX：第2ステップで実データ化）
+#  金属・原油・SOX（実データ）
 # ───────────────────────────────────────────────
-def sample_cards():
-    return [
-        render_kpi("hexagon", "ニッケル", "镍 ・ Nickel", "¥128,300", "up", "▲ +1.2%",
-                   "#EF4444", "0,28 14,24 28,27 42,20 56,22 70,16 84,13 100,9"),
-        render_kpi("hexagon", "アルミ", "铝 ・ Aluminum", "¥20,450", "down", "▼ -0.6%",
-                   "#3B82F6", "0,14 14,12 28,16 42,15 56,20 70,18 84,24 100,26"),
-        render_kpi("hexagon", "モリブデン", "钼 ・ Molybdenum", "参考値", "flat", "― 週次更新",
-                   "#8A93A0", "0,20 14,19 28,21 42,20 56,18 70,19 84,18 100,17",
-                   value_style=' style="font-size:22px;color:var(--body);"'),
-        render_kpi("droplet", "原油 WTI", "原油 ・ Crude", "$72.40", "up", "▲ +0.8%",
-                   "#EF4444", "0,24 14,22 28,25 42,18 56,20 70,15 84,17 100,11"),
-        render_kpi("activity", "SOX指数", "费城半导体 ・ SOX", "5,180", "up", "▲ +1.1%",
-                   "#EF4444", "0,26 14,20 28,23 42,17 56,14 70,16 84,10 100,8"),
-    ]
+def fetch_yahoo(ticker):
+    """Yahoo Finance から日次の終値リスト（古い→新しい）を取得。失敗時 None。"""
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+           f"?range=1mo&interval=1d")
+    try:
+        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        res = r.json()["chart"]["result"][0]
+        closes = [c for c in res["indicators"]["quote"][0]["close"] if c is not None]
+        return closes or None
+    except Exception as e:
+        print(f"[Yahoo] 取得失敗 {ticker}: {e}", file=sys.stderr)
+        return None
+
+
+def fetch_sina_kline(sym):
+    """新浪財経の内盤期貨（SHFE等）日足から終値リストを取得。失敗時 None。
+    sym 例: NI0=沪镍, AL0=沪铝, CU0=沪铜（0=主力連続）。値は 元/トン。"""
+    url = (f"https://stock2.finance.sina.com.cn/futures/api/jsonp.php/"
+           f"var%20_{sym}=/InnerFuturesNewService.getDailyKLine?symbol={sym}")
+    try:
+        r = requests.get(url, timeout=20, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://finance.sina.com.cn",
+        })
+        r.raise_for_status()
+        txt = r.text
+        i, j = txt.find("["), txt.rfind("]")
+        arr = json.loads(txt[i:j + 1])
+        closes = [float(x["c"]) for x in arr if x.get("c")]
+        return closes or None
+    except Exception as e:
+        print(f"[Sina] 取得失敗 {sym}: {e}", file=sys.stderr)
+        return None
+
+
+def market_card(icon, title, sub, series, val_fmt, diff_fmt):
+    """終値リストから KPIカードを作る。前日比は終値どうしで計算。"""
+    if not series:
+        return render_kpi(icon, title, sub, "—", "flat", "取得できませんでした",
+                          "#8A93A0", spark_points([]))
+    cur = series[-1]
+    prev = series[-2] if len(series) >= 2 else cur
+    diff = cur - prev
+    pct = (diff / prev * 100) if prev else 0
+    cls, arrow, color = change_class(pct)
+    chg = (f"{arrow} {diff_fmt(diff)} ({pct:+.2f}%)" if len(series) >= 2 else "前日比なし")
+    return render_kpi(icon, title, sub, val_fmt(cur), cls, chg, color,
+                      spark_points(series[-12:]))
+
+
+def moly_card():
+    """モリブデン：無料の安定相場が無いため参考ページへのリンク。"""
+    link = ('<a href="https://www.metal.com/Molybdenum" target="_blank" rel="noopener" '
+            'style="color:var(--body);text-decoration:none;'
+            'border-bottom:1px solid var(--border-strong);">参考ページ →</a>')
+    return render_kpi("hexagon", "モリブデン", "钼 ・ 参考(無料相場少)", link,
+                      "flat", "週次・手動で確認", "#8A93A0", "0,20 100,20",
+                      value_style=' style="font-size:16px;"')
 
 
 # ───────────────────────────────────────────────
@@ -205,7 +250,8 @@ def spring_festival():
 # ───────────────────────────────────────────────
 #  履歴の保存（将来のグラフ用バックアップ）
 # ───────────────────────────────────────────────
-def save_history(usdjpy, cnyjpy):
+def save_history(snapshot):
+    """その日の値を data/history.json に記録（将来のグラフ用バックアップ）。"""
     path = os.path.join(ROOT, "data", "history.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
@@ -215,7 +261,7 @@ def save_history(usdjpy, cnyjpy):
         hist = []
     today = NOW.strftime("%Y-%m-%d")
     hist = [h for h in hist if h.get("date") != today]
-    hist.append({"date": today, "usdjpy": usdjpy, "cnyjpy": cnyjpy})
+    hist.append({"date": today, **snapshot})
     hist = hist[-500:]
     with open(path, "w", encoding="utf-8") as f:
         json.dump(hist, f, ensure_ascii=False, indent=2)
@@ -231,7 +277,24 @@ def main():
     usd_html, usd_now = fx_card("USD / JPY", "美元 / 日元", "dollar", usd_vals)
     cny_html, cny_now = fx_card("CNY / JPY", "人民币 / 日元", "yen", cny_vals)
 
-    kpis = [usd_html, cny_html] + sample_cards()
+    # --- 金属・原油・SOX（実データ）---
+    nickel = fetch_sina_kline("NI0")   # 沪镍（元/t）
+    alu = fetch_sina_kline("AL0")      # 沪铝（元/t）
+    oil = fetch_yahoo("CL=F")          # WTI原油（$/bbl）
+    sox = fetch_yahoo("^SOX")          # 費城半導体指数
+
+    cny0 = lambda v: f"{v:,.0f}"       # 元・整数
+    cnyd = lambda d: f"{d:+,.0f}"
+    kpis = [
+        usd_html,
+        cny_html,
+        market_card("hexagon", "ニッケル", "沪镍 ・ 元/t (CNY)", nickel, cny0, cnyd),
+        market_card("hexagon", "アルミ", "沪铝 ・ 元/t (CNY)", alu, cny0, cnyd),
+        moly_card(),
+        market_card("droplet", "原油 WTI", "原油 ・ $/bbl", oil,
+                    lambda v: f"${v:,.2f}", lambda d: f"{d:+.2f}"),
+        market_card("activity", "SOX指数", "费城半导体 ・ pt", sox, cny0, cnyd),
+    ]
 
     # --- ニュース ---
     news = {k: render_news(fetch_news(q)) for k, q in FEEDS.items()}
@@ -250,10 +313,19 @@ def main():
         f.write(out)
 
     # --- 履歴保存 ---
-    save_history(usd_now, cny_now)
+    save_history({
+        "usdjpy": usd_now,
+        "cnyjpy": cny_now,
+        "nickel": round(nickel[-1], 1) if nickel else None,
+        "alu": round(alu[-1], 1) if alu else None,
+        "wti": round(oil[-1], 2) if oil else None,
+        "sox": round(sox[-1], 2) if sox else None,
+    })
 
     print(f"[OK] index.html を生成しました（{NOW:%Y-%m-%d %H:%M} 中国時間）")
     print(f"      USD/JPY={usd_now}  CNY/JPY={cny_now}")
+    print(f"      沪镍={nickel[-1] if nickel else None}  沪铝={alu[-1] if alu else None}  "
+          f"WTI={oil[-1] if oil else None}  SOX={sox[-1] if sox else None}")
 
 
 if __name__ == "__main__":
