@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import html
+import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
@@ -28,6 +29,7 @@ import feedparser
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CN = timezone(timedelta(hours=8))          # 中国標準時（UTC+8）
 NOW = datetime.now(CN)
+DASH_URL = "https://karatsu07-commits.github.io/morning-dashboard/"
 
 # ───────────────────────────────────────────────
 #  アイコン（Lucide風SVG・外部読み込みなし）
@@ -50,6 +52,22 @@ ICONS = {
 # ───────────────────────────────────────────────
 #  小道具
 # ───────────────────────────────────────────────
+def _get(url, headers=None, tries=3):
+    """GETに失敗したら少し待って数回やり直す（一時的な通信エラー対策）。"""
+    last = None
+    for i in range(tries):
+        try:
+            r = requests.get(url, timeout=20,
+                             headers=headers or {"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            last = e
+            if i < tries - 1:
+                time.sleep(2)
+    raise last
+
+
 def change_class(pct):
     """増減率から (CSSクラス, 矢印, 色) を返す。上昇＝赤 / 下落＝青。"""
     if pct > 0:
@@ -97,8 +115,7 @@ def fetch_fx(base):
     start = end - timedelta(days=18)
     url = f"https://api.frankfurter.app/{start}..{end}?from={base}&to=JPY"
     try:
-        r = requests.get(url, timeout=20)
-        r.raise_for_status()
+        r = _get(url)
         rates = r.json().get("rates", {})
         vals = [rates[d]["JPY"] for d in sorted(rates.keys()) if "JPY" in rates[d]]
         return vals or None
@@ -130,8 +147,7 @@ def fetch_yahoo(ticker):
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
            f"?range=1mo&interval=1d")
     try:
-        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
+        r = _get(url)
         res = r.json()["chart"]["result"][0]
         closes = [c for c in res["indicators"]["quote"][0]["close"] if c is not None]
         return closes or None
@@ -146,11 +162,10 @@ def fetch_sina_kline(sym):
     url = (f"https://stock2.finance.sina.com.cn/futures/api/jsonp.php/"
            f"var%20_{sym}=/InnerFuturesNewService.getDailyKLine?symbol={sym}")
     try:
-        r = requests.get(url, timeout=20, headers={
+        r = _get(url, headers={
             "User-Agent": "Mozilla/5.0",
             "Referer": "https://finance.sina.com.cn",
         })
-        r.raise_for_status()
         txt = r.text
         i, j = txt.find("["), txt.rfind("]")
         arr = json.loads(txt[i:j + 1])
@@ -232,6 +247,55 @@ def render_news(items):
 
 
 # ───────────────────────────────────────────────
+#  WeChat配信（Server酱）— 鍵 SERVERCHAN_KEY があるときだけ送る
+# ───────────────────────────────────────────────
+def _msg_line(label, series, unit="", fmt="{:,.0f}"):
+    if not series:
+        return f"{label}：取得失敗"
+    cur = series[-1]
+    prev = series[-2] if len(series) >= 2 else cur
+    pct = ((cur - prev) / prev * 100) if prev else 0
+    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "―")
+    return f"{label} {fmt.format(cur)}{unit}　{arrow}{pct:+.2f}%"
+
+
+def build_summary(usd_vals, cny_vals, nickel, alu, oil, sox, raw_news):
+    """WeChatへ送る朝のまとめ（タイトル, 本文markdown）を作る。"""
+    b = ["**為替**",
+         _msg_line("USD/JPY", usd_vals, fmt="{:,.2f}"),
+         _msg_line("CNY/JPY", cny_vals, fmt="{:,.2f}"),
+         "**金属・市況**",
+         _msg_line("ニッケル 沪镍", nickel, unit="元/t"),
+         _msg_line("アルミ 沪铝", alu, unit="元/t"),
+         _msg_line("原油WTI", oil, fmt="${:,.2f}"),
+         _msg_line("SOX指数", sox)]
+    for key, label in [("SEMI", "半導体"), ("CHINA", "中国・輸出管理"), ("GLOBAL", "世界・物流")]:
+        items = raw_news.get(key, [])[:2]
+        if items:
+            b.append(f"**{label}**")
+            for t, _link, _tstr in items:
+                b.append(f"・{t}")
+    b.append(f"🧧 春節 {spring_festival()}")
+    b.append(f"▶ ダッシュボード: {DASH_URL}")
+    title = f"🌅 朝のまとめ {NOW.month}/{NOW.day}"
+    return title, "\n\n".join(b)
+
+
+def send_wechat(title, desp):
+    key = os.environ.get("SERVERCHAN_KEY", "").strip()
+    if not key:
+        print("[WeChat] SERVERCHAN_KEY 未設定のため送信スキップ")
+        return
+    try:
+        r = requests.post(f"https://sctapi.ftqq.com/{key}.send",
+                          data={"title": title, "desp": desp}, timeout=20)
+        ok = (r.json().get("code") == 0)
+        print(f"[WeChat] 送信{'成功' if ok else '失敗: ' + r.text[:150]}")
+    except Exception as e:
+        print(f"[WeChat] 送信失敗: {e}", file=sys.stderr)
+
+
+# ───────────────────────────────────────────────
 #  春節カウントダウン
 # ───────────────────────────────────────────────
 CNY_DATES = ["2027-02-06", "2028-01-26", "2029-02-13", "2030-02-03", "2031-01-23"]
@@ -297,7 +361,8 @@ def main():
     ]
 
     # --- ニュース ---
-    news = {k: render_news(fetch_news(q)) for k, q in FEEDS.items()}
+    raw_news = {k: fetch_news(q) for k, q in FEEDS.items()}
+    news = {k: render_news(v) for k, v in raw_news.items()}
 
     # --- テンプレートに流し込み ---
     with open(os.path.join(ROOT, "template.html"), encoding="utf-8") as f:
@@ -326,6 +391,10 @@ def main():
     print(f"      USD/JPY={usd_now}  CNY/JPY={cny_now}")
     print(f"      沪镍={nickel[-1] if nickel else None}  沪铝={alu[-1] if alu else None}  "
           f"WTI={oil[-1] if oil else None}  SOX={sox[-1] if sox else None}")
+
+    # --- WeChat配信（SERVERCHAN_KEY があるときだけ送信）---
+    title, desp = build_summary(usd_vals, cny_vals, nickel, alu, oil, sox, raw_news)
+    send_wechat(title, desp)
 
 
 if __name__ == "__main__":
