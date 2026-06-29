@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>朝のダッシュボード / 晨间仪表盘</title>
+<style>
+  /* 外部のフォント・アイコン・ライブラリは一切読み込まない（中国回線でも確実に表示するため）。
+     アイコンはSVG埋め込み、フォントはローカルにあれば使い、無ければシステムフォントに自動で切替。 */
+  :root{
+    --bg:#0B0D10;
+    --card:#14181F;
+    --card-hover:#171c25;
+    --border:rgba(255,255,255,0.08);
+    --border-strong:rgba(255,255,255,0.14);
+    --title:#FFFFFF;
+    --body:#C7CCD4;
+    --muted:#8A93A0;
+    --blue:#3B82F6;
+    --up:#EF4444;     /* 上昇＝赤 */
+    --down:#3B82F6;   /* 下落＝青 */
+    --shadow:0 1px 2px rgba(0,0,0,.5);
+    --shadow-hover:0 10px 28px rgba(0,0,0,.55);
+    --pad-x:clamp(20px,3vw,32px);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg);}
+  body{
+    color:var(--body);
+    font-family:"Inter","Noto Sans JP",-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC","Hiragino Sans","Yu Gothic UI",Roboto,sans-serif;
+    line-height:1.5;
+    -webkit-text-size-adjust:100%;
+    -webkit-font-smoothing:antialiased;
+    font-variant-numeric:tabular-nums;
+  }
+  .wrap{width:100%;padding:0 var(--pad-x) 40px;}
+  svg{width:100%;height:100%;display:block;}
+  .ico{width:18px;height:18px;flex:0 0 auto;color:var(--muted);}
+  @keyframes fadeNum{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}
+
+  /* ── ヘッダー ── */
+  header.top{
+    height:60px;display:flex;align-items:center;gap:14px;
+    border-bottom:1px solid var(--border);position:sticky;top:0;
+    background:rgba(11,13,16,.82);backdrop-filter:blur(8px);z-index:10;
+    margin:0 calc(-1*var(--pad-x));padding:0 var(--pad-x);
+  }
+  header.top .brand{display:flex;align-items:center;gap:9px;font-size:16px;font-weight:600;color:var(--title);}
+  header.top .brand .em{font-size:18px;}
+  header.top .right{margin-left:auto;display:flex;align-items:center;gap:14px;}
+  header.top .upd{font-size:12px;color:var(--muted);text-align:right;line-height:1.3;}
+  header.top .upd b{color:var(--body);font-weight:600;}
+  .btn{
+    display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+    background:transparent;color:var(--body);border:1px solid var(--border-strong);
+    border-radius:9px;padding:7px 12px;font-size:13px;font-family:inherit;
+    transition:background .2s,border-color .2s,transform .2s;
+  }
+  .btn:hover{background:#1b212b;border-color:rgba(255,255,255,.22);}
+  .btn .ico{width:15px;height:15px;color:var(--body);}
+
+  /* ── 共通：セクション見出し ── */
+  .sec{margin:24px 0 12px;display:flex;align-items:baseline;gap:10px;}
+  .sec h2{font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin:0;}
+
+  /* ── KPIカード ── */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px;}
+  .kpi{
+    background:var(--card);border:1px solid var(--border);border-radius:16px;
+    min-height:176px;padding:18px 20px 0;display:flex;flex-direction:column;
+    box-shadow:var(--shadow);transition:transform .2s,box-shadow .2s,border-color .2s,background .2s;
+  }
+  .kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover);border-color:var(--border-strong);background:var(--card-hover);}
+  .kpi .head{display:flex;align-items:center;gap:9px;}
+  .kpi .head .ttl{font-size:13px;font-weight:600;color:var(--title);}
+  .kpi .head .sub{font-size:11px;color:var(--muted);margin-top:1px;}
+  .kpi .val{font-size:30px;font-weight:700;color:var(--title);margin:14px 0 4px;letter-spacing:-.02em;animation:fadeNum .4s ease;}
+  .kpi .chg{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px;}
+  .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);}
+  .kpi .spark{margin-top:auto;height:40px;margin:auto -20px 0;padding:0 4px;}
+  .kpi .spark svg{height:40px;}
+
+  /* ── ニュース3カラム ── */
+  .news{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:stretch;}
+  .ncard{background:var(--card);border:1px solid var(--border);border-radius:16px;
+    padding:18px 20px;box-shadow:var(--shadow);display:flex;flex-direction:column;}
+  .ncard .nhead{display:flex;align-items:center;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--border);}
+  .ncard .nhead .ico{width:20px;height:20px;color:var(--body);}
+  .ncard .nhead .t{font-size:14px;font-weight:600;color:var(--title);}
+  .ncard .nhead .t .en{display:block;font-size:11px;font-weight:400;color:var(--muted);}
+  .ncard ul{list-style:none;margin:6px 0 0;padding:0;flex:1;}
+  .ncard li{padding:11px 0;border-bottom:1px solid var(--border);}
+  .ncard li:last-child{border-bottom:none;}
+  .ncard li a{color:var(--body);text-decoration:none;font-size:13.5px;display:block;transition:color .2s;}
+  .ncard li a:hover{color:var(--title);}
+  .ncard li .time{font-size:11px;color:var(--muted);margin-top:4px;}
+  .more{margin-top:12px;font-size:12.5px;color:var(--blue);text-decoration:none;display:inline-flex;align-items:center;gap:5px;}
+  .more:hover{text-decoration:underline;}
+
+  /* ── 下段2カラム ── */
+  .bottom{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .pcard{background:var(--card);border:1px solid var(--border);border-radius:16px;
+    padding:18px 20px;box-shadow:var(--shadow);display:flex;flex-direction:column;}
+  .pcard .phead{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+  .pcard .phead .ico{width:19px;height:19px;color:var(--body);}
+  .pcard .phead .t{font-size:14px;font-weight:600;color:var(--title);}
+  .pcard ul{list-style:none;margin:0;padding:0;}
+  .pcard li{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:13.5px;border-bottom:1px solid var(--border);}
+  .pcard li:last-child{border-bottom:none;}
+  .pcard li .ico{width:15px;height:15px;}
+  .pill{margin-left:auto;background:rgba(59,130,246,.12);color:#9cc0ff;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:600;}
+  .memo{flex:1;color:var(--muted);font-size:13px;min-height:90px;padding:4px 0;}
+  .cardfoot{margin-top:14px;display:flex;}
+  .cardfoot .btn{margin-left:0;}
+  .cardfoot.r .btn{margin-left:auto;}
+
+  footer{margin-top:26px;padding-top:16px;border-top:1px solid var(--border);
+    font-size:11px;color:var(--muted);text-align:center;line-height:1.7;}
+
+  @media (max-width:620px){
+    header.top .brand{font-size:14px;}
+    .bottom{grid-template-columns:1fr;}
+    .kpi .val{font-size:26px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand"><span class="em">🌅</span> 朝のダッシュボード</div>
+    <div class="right">
+      <div class="upd">最終更新 / 最后更新<br><b>2026-06-29 09:00</b> (中国時間)</div>
+      <button class="btn" onclick="location.reload()">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>
+        更新
+      </button>
+    </div>
+  </header>
+
+  <!-- ───────── KPIカード ───────── -->
+  <div class="sec"><h2>今朝の数字 ・ Market</h2></div>
+  <div class="kpis">
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+        <div><div class="ttl">USD / JPY</div><div class="sub">美元 / 日元</div></div></div>
+      <div class="val">161.65</div>
+      <div class="chg down">▼ -0.20 (-0.12%)</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0.0,34.0 11.1,30.8 22.2,32.0 33.3,21.5 44.4,16.5 55.6,7.2 66.7,11.4 77.8,8.9 88.9,6.0 100.0,9.4"/></svg></div>
+    </div>
+
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 3 3 6 3-6"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M12 9v12"/></svg></span>
+        <div><div class="ttl">CNY / JPY</div><div class="sub">人民币 / 日元</div></div></div>
+      <div class="val">23.78</div>
+      <div class="chg down">▼ -0.03 (-0.12%)</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0.0,34.0 11.1,29.1 22.2,32.4 33.3,24.6 44.4,16.1 55.6,6.0 66.7,18.0 77.8,28.8 88.9,17.6 100.0,22.3"/></svg></div>
+    </div>
+
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16.05V7.95a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/></svg></span>
+        <div><div class="ttl">ニッケル</div><div class="sub">镍 ・ Nickel</div></div></div>
+      <div class="val">¥128,300</div>
+      <div class="chg up">▲ +1.2%</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0,28 14,24 28,27 42,20 56,22 70,16 84,13 100,9"/></svg></div>
+    </div>
+
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16.05V7.95a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/></svg></span>
+        <div><div class="ttl">アルミ</div><div class="sub">铝 ・ Aluminum</div></div></div>
+      <div class="val">¥20,450</div>
+      <div class="chg down">▼ -0.6%</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0,14 14,12 28,16 42,15 56,20 70,18 84,24 100,26"/></svg></div>
+    </div>
+
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16.05V7.95a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73Z"/></svg></span>
+        <div><div class="ttl">モリブデン</div><div class="sub">钼 ・ Molybdenum</div></div></div>
+      <div class="val" style="font-size:22px;color:var(--body);">参考値</div>
+      <div class="chg flat">― 週次更新</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#8A93A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0,20 14,19 28,21 42,20 56,18 70,19 84,18 100,17"/></svg></div>
+    </div>
+
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg></span>
+        <div><div class="ttl">原油 WTI</div><div class="sub">原油 ・ Crude</div></div></div>
+      <div class="val">$72.40</div>
+      <div class="chg up">▲ +0.8%</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0,24 14,22 28,25 42,18 56,20 70,15 84,17 100,11"/></svg></div>
+    </div>
+
+    <div class="kpi">
+      <div class="head"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+        <div><div class="ttl">SOX指数</div><div class="sub">费城半导体 ・ SOX</div></div></div>
+      <div class="val">5,180</div>
+      <div class="chg up">▲ +1.1%</div>
+      <div class="spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none"><polyline fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="0,26 14,20 28,23 42,17 56,14 70,16 84,10 100,8"/></svg></div>
+    </div></div>
+
+  <!-- ───────── ニュース3カラム ───────── -->
+  <div class="sec"><h2>ニュース ・ News</h2></div>
+  <div class="news">
+
+    <div class="ncard">
+      <div class="nhead">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span>
+        <div class="t">半導体業界<span class="en">Semiconductor</span></div>
+      </div>
+      <ul><li><a href="https://news.google.com/rss/articles/CBMiWkFVX3lxTE9EN29Va3VoeGhzT0tXeTNBYkVtZC1UM3VIVDBvbkt6VHNYYTZnMzlGemlVV2VQOXMzVWFLcVYzN0RRcV96Q0htQlN2N1RvazJ1bmQ2TkJSLW5UZw?oc=5" target="_blank" rel="noopener">日経平均・半導体関連株が大荒れ、目先調整か？（窪田真之） - トウシル</a><div class="time">06/29 07:00</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMif0FVX3lxTE9PLXNxQ293cFRQMGV1RDJBbjViRUx5dGZjVzROQVZGbDBMNUMzR1l6dnVzOGdqemFrbzF4ZjU4clhxNXpZVENLY1NibzAzb3M3UTM4b0hEQi04d2ZSZGV6VEZXaWcyczZnUVhhTnZENjBQYV9CbTJ0cHZ3RjZiQVU?oc=5" target="_blank" rel="noopener">日本のように半導体分散？TSMCが熊本を選んだ本当の理由（中央日報日本語版） - Yahoo!ニュース</a><div class="time">06/29 05:48</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMiYEFVX3lxTE1fMzRUNlhtVWtHdGc4eFF2QzN4SEVNQ1lhcWxxbjU3ZjhTSWRNY1pkbzBwU2dKblFnZktScEJkTjZRN0pvREdUeTdXMDllS3FXV2VCWC1oUURSNjZTeVRnTA?oc=5" target="_blank" rel="noopener">前場に注目すべき3つのポイント～半導体やAI関連株へは慎重姿勢～ - かぶたん</a><div class="time">06/29 07:39</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTE9DdVJQWHJCajJZRVdFcnJTejNhdm1lTm5zOGFoSy1GOUFWbFlKNGlQekZzajZ3Q0g1X0dlblZoem5kZFl1eVRSTzl2My1uaEZmcUpvc2tFR2l2MHJZN1hPdUMxR21xT1ItUjBCNg?oc=5" target="_blank" rel="noopener">鹿島新社長、AI時代も「最後は人」 TSMC熊本工場に技能者7500人超 - 日経ビジネス電子版</a><div class="time">06/29 04:00</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMigAFBVV95cUxQTGRSM1UxaGtfZWRwdzFEZTFpeXlfTUJic2IySDlTMWR4cERBdFBEbHZfSVUwZnJnUWlNdXQwWDE2NnpsUTdpWXppN1hyRUh2SFMxcUh3QXBZZHdNb2pJWTNvbTU3d1luQ3RmRWtHUGgzN1RlVjQ3VG9SODNhOGdsYg?oc=5" target="_blank" rel="noopener">日経平均は反発で寄り付く、一巡後マイナス転換 半導体株安い - Reuters</a><div class="time">06/29 08:16</div></li></ul>
+      <a class="more" href="https://news.google.com/search?q=%E5%8D%8A%E5%B0%8E%E4%BD%93&hl=ja" target="_blank" rel="noopener">すべて見る →</a>
+    </div>
+
+    <div class="ncard">
+      <div class="nhead">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M16 13H8M16 17H8M10 9H8"/></svg></span>
+        <div class="t">中国・輸出管理<span class="en">China / Export Control</span></div>
+      </div>
+      <ul><li><a href="https://news.google.com/rss/articles/CBMib0FVX3lxTE1hLU5DYWZuYVctV0lyMHRzRFlRUUY2VVl4Tk9lNmc2cEE0Ym42MEtWQ0l5VGNJMVRVZmJPZDZaMmFaVmMxU0d4UWZhRzlDUTVlNjd1allvbWU2VjB1ck9hX0p2R3YzVHVENkRLTXVFRQ?oc=5" target="_blank" rel="noopener">半導体封止材の生産能力増強、中国で高まる需要に対応：工場ニュース - MONOist</a><div class="time">06/29 06:15</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTFBZV0F1VnAyamFSenBtcDRCaEdLbDhRdTlVMHBxZm5NOGxvdkc4b3A0eHg4T3lSczBjV3c5cmJXR3VuT0haNHFrLWFTck1USEpBM1Q3UTNyX1U2NGdqT1E4bTdMX29RQlU1N1YteQ?oc=5" target="_blank" rel="noopener">中国、AI向け半導体の急所握る タングステン禁輸で特殊ガス株急騰 - 日本経済新聞</a><div class="time">06/25 03:30</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMiY0FVX3lxTE9YZU9LbjN4bWJiMmotTExHaHVSTWFXVnBWZnUzYl9rdFJwREJKR1d2bHQ4RUZSUkt5emp4ekloWjloM01ZTEJwYmp5dUU2Sm0xV2ZSTjJtQzNCeFZEYkplMWlyNA?oc=5" target="_blank" rel="noopener">半導体研究機関 トップが明かす 半導体開発 “中国切り離し”完了 - テレ東BIZ</a><div class="time">06/26 04:45</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMif0FVX3lxTE9mZUQ4Wmt2YWhLd3hJT29XMzg4OTI4bFdGSWlZcXB4MFJJenpGTGI3cHQ4T0FrY040XzNSNHRRaE9WMlRKSlJaenhLa3FndEN4MXk0WTVKLU9lR0t2cGl5eUZzeVZmdFlrQUhtTTJXSlR1aV95eWxsS1JxT2Q3V2M?oc=5" target="_blank" rel="noopener">中国への半導体輸出は2025年に5割増加…日中関係が冷え込む中でもAI向け需要が急増、得意のメモリー価格も急騰 - Yahoo!ニュース</a><div class="time">06/23 05:00</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMiZ0FVX3lxTE9fMVVQcV90SXR5dVRwQWkxQ0lVYVVEZlVfQUNSbnI1blZoZjlfVUxLV05hSzZndEwwakF2TDVYdG9Oel9NXzdRRWFpcGhOQUt4Sk9sQ3RvNFZ2ckpZTmN2MVdiWkU1Sm8?oc=5" target="_blank" rel="noopener">日系電機大手社員が中国で拘束 対日輸出規制のレアアースが関係か [南鳥島沖] - 朝日新聞</a><div class="time">06/24 05:00</div></li></ul>
+      <a class="more" href="https://news.google.com/search?q=%E4%B8%AD%E5%9B%BD%20%E8%BC%B8%E5%87%BA%E7%AE%A1%E7%90%86&hl=ja" target="_blank" rel="noopener">すべて見る →</a>
+    </div>
+
+    <div class="ncard">
+      <div class="nhead">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.4 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.9 5.3 2.8 7.8"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 10V2M8 5h8"/></svg></span>
+        <div class="t">世界情勢・物流<span class="en">Global / Logistics</span></div>
+      </div>
+      <ul><li><a href="https://news.google.com/rss/articles/CBMiSEFVX3lxTE43d2ktVnNqOUx4NUx1enU4eUllWjdwQW9vMk1DLWRpMXhXaDN5V3RHWWFneE9zbExEVVJPYV9XMU8zZURpYmMxQw?oc=5" target="_blank" rel="noopener">ATカーニー、半導体供給網の脆弱性を指摘 - LOGISTICS TODAY</a><div class="time">06/25 02:48</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTFBack1NWVlUb2hFMjdiS1NhZzFQUlpuT3M4cy1FVW9NMXRlVUtsdXNDMEpWOGNuN3V4NXpMc2tIOWFLMlNTMU1hSlFIZnZVTWJncGlUOGd4ZUh5RkJXYXdqTWk0NmFVV1ZiUFBvbw?oc=5" target="_blank" rel="noopener">[FT]オランダASMLのCEO、EUに注文 半導体供給網介入「待った」 - 日本経済新聞</a><div class="time">06/23 05:00</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMif0FVX3lxTE5pQ0VucGhvZF95MUpFQlVPZGQ5TGZEckpqV0FuWnpoZUUxcENKWk9sUHRTeDhmV3JvTFFkcVBlZERpbk1pMXBaWFlYVDE0VFZDamY4V3h5X0p1aWJNNzAyN3IxLWVZUFlDRXdmQlhnSHpDX19idEdsWjRhSV9rMGc?oc=5" target="_blank" rel="noopener">AI需要で半導体不足は「しばらく続く」 PCメーカー、デルの対応策は？（ITmedia ビジネスオンライン） - Yahoo!ニュース</a><div class="time">06/24 23:14</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMibEFVX3lxTE5CME1FanZVU1AzbVlYZlpGNjE3UC1oZ25wT28xUWNLR1VDTkRhNHotcmpmcFRubmpjMERIVFJ6VFB0SlhES2hwTUJmek1FMHB1aHRJSVM0eDRtLTJLZ0V2dnQ1a05XUVllbmlKNA?oc=5" target="_blank" rel="noopener">半導体大手各社、「メモリ不足は2027年も続く」との見方示す。“ゲーム機値上げラッシュ”も引き起こした世界的メモリ不足、供給改善は「2028年以降」か - AUTOMATON</a><div class="time">06/26 14:10</div></li>
+<li><a href="https://news.google.com/rss/articles/CBMidkFVX3lxTFBMSjlHa0MtUmR3a0xHNE5Ed2lmSmFzVENlRXNwM2JXTTVScEYzS2ZvM1hSdC05eG81VlB3MWpGX2E2N0pHc1dRQTl2Vmk3M2k1XzFocjR2RFMxWm9HT2t3aFBzaHl6ekxFWFR6bmhrZjREUUtEZWc?oc=5" target="_blank" rel="noopener">住友電工、中国でデジタルインフラ協力拡大へ サプライチェーン博出展 - 新華網日本語</a><div class="time">06/25 01:59</div></li></ul>
+      <a class="more" href="https://news.google.com/search?q=%E3%82%B5%E3%83%97%E3%83%A9%E3%82%A4%E3%83%81%E3%82%A7%E3%83%BC%E3%83%B3&hl=ja" target="_blank" rel="noopener">すべて見る →</a>
+    </div>
+
+  </div>
+
+  <!-- ───────── 下段2カラム ───────── -->
+  <div class="sec"><h2>業務 ・ Operations</h2></div>
+  <div class="bottom">
+
+    <div class="pcard">
+      <div class="phead">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>
+        <div class="t">業務カレンダー</div>
+      </div>
+      <ul>
+        <li><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>春節（旧正月）<span class="pill">あと 222 日（2027-02-06）</span></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20M4 20V8l8-5 8 5v12M9 20v-6h6v6"/></svg></span>展示会：SEMICON系・真空展 など <span style="color:var(--muted);font-size:12px;margin-left:6px;">（後で自動表示）</span></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>中国の祝日・営業日 <span style="color:var(--muted);font-size:12px;margin-left:6px;">（後で自動表示）</span></li>
+      </ul>
+      <div class="cardfoot">
+        <button class="btn">
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>
+          カレンダーを開く
+        </button>
+      </div>
+    </div>
+
+    <div class="pcard">
+      <div class="phead">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M16 13H8M16 17H8M10 9H8"/></svg></span>
+        <div class="t">今日のメモ</div>
+      </div>
+      <div class="memo">
+        自分用の記入欄。サプライヤー動向・競合情報・やること などを書き留める枠です。<br>
+        <span style="font-size:12px;">※第2弾で「書いて保存できる」形にする予定。</span>
+      </div>
+      <div class="cardfoot r">
+        <button class="btn">
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+          編集
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    データ出典：為替＝Frankfurter（欧州中銀ECBベース）｜ニュース＝Google ニュース RSS　／　自動更新：毎朝 中国時間 8:00<br>
+    ※ニッケル・アルミ・モリブデン・原油・SOXは第2ステップで実データに切替（現在はサンプル）。機密情報は掲載しません。
+  </footer>
+
+</div>
+</body>
+</html>
