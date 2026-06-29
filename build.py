@@ -282,17 +282,21 @@ def build_summary(usd_vals, cny_vals, nickel, alu, oil, sox, raw_news):
 
 
 def send_wechat(title, desp):
-    key = os.environ.get("SERVERCHAN_KEY", "").strip()
-    if not key:
+    """SERVERCHAN_KEY に複数の鍵をカンマ区切りで入れると、全員に送信できる。
+    例: SERVERCHAN_KEY = "SCTあなたの鍵,SCT同僚の鍵" """
+    raw = os.environ.get("SERVERCHAN_KEY", "")
+    keys = [k.strip() for k in raw.split(",") if k.strip()]
+    if not keys:
         print("[WeChat] SERVERCHAN_KEY 未設定のため送信スキップ")
         return
-    try:
-        r = requests.post(f"https://sctapi.ftqq.com/{key}.send",
-                          data={"title": title, "desp": desp}, timeout=20)
-        ok = (r.json().get("code") == 0)
-        print(f"[WeChat] 送信{'成功' if ok else '失敗: ' + r.text[:150]}")
-    except Exception as e:
-        print(f"[WeChat] 送信失敗: {e}", file=sys.stderr)
+    for key in keys:
+        try:
+            r = requests.post(f"https://sctapi.ftqq.com/{key}.send",
+                              data={"title": title, "desp": desp}, timeout=20)
+            ok = (r.json().get("code") == 0)
+            print(f"[WeChat] {key[:6]}… 送信{'成功' if ok else '失敗: ' + r.text[:120]}")
+        except Exception as e:
+            print(f"[WeChat] {key[:6]}… 送信失敗: {e}", file=sys.stderr)
 
 
 # ───────────────────────────────────────────────
@@ -309,6 +313,27 @@ def spring_festival():
             days = (cny - today).days
             return f"あと {days} 日（{cny.strftime('%Y-%m-%d')}）"
     return "—"
+
+
+# ───────────────────────────────────────────────
+#  共有メモ（memo.md を読み込んで表示）
+# ───────────────────────────────────────────────
+def load_memo():
+    """memo.md を読み、最低限のmarkdownでHTML化。全員が同じ内容を見る共有メモ。"""
+    try:
+        with open(os.path.join(ROOT, "memo.md"), encoding="utf-8") as f:
+            txt = f.read().strip()
+    except Exception:
+        txt = ""
+    if not txt:
+        return '<span style="color:var(--muted);">（メモはまだありません。「編集」から書けます）</span>'
+    out = []
+    for ln in txt.splitlines():
+        s = html.escape(ln).strip()
+        if s.startswith("- "):
+            s = "・" + s[2:]
+        out.append(s if s else "&nbsp;")
+    return "<br>".join(out)
 
 
 # ───────────────────────────────────────────────
@@ -373,6 +398,7 @@ def main():
     out = out.replace("<!--NEWS_CHINA-->", news["CHINA"])
     out = out.replace("<!--NEWS_GLOBAL-->", news["GLOBAL"])
     out = out.replace("<!--SPRINGFESTIVAL-->", spring_festival())
+    out = out.replace("<!--MEMO-->", load_memo())
 
     with open(os.path.join(ROOT, "index.html"), "w", encoding="utf-8") as f:
         f.write(out)
