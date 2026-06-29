@@ -25,6 +25,8 @@ jobs:
 
       - name: build dashboard
         run: python build.py
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
 
       - name: commit and push
         run: |
