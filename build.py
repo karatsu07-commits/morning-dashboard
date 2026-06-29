@@ -206,9 +206,11 @@ def moly_card():
 # ───────────────────────────────────────────────
 FEEDS = {
     # キーワードは自由に調整できます（OR と () が使えます）
-    "SEMI":   "半導体 OR 半導体製造装置 OR TSMC OR ASML OR 東京エレクトロン",
-    "CHINA":  "中国 (輸出規制 OR 輸出管理 OR 通関 OR 半導体)",
-    "GLOBAL": "サプライチェーン OR 海運 OR 物流混乱 OR 半導体 供給",
+    "SEMI":    "半導体 OR 半導体製造装置 OR TSMC OR ASML OR 東京エレクトロン OR ラピダス",
+    "CHINA":   "中国 (輸出規制 OR 輸出管理 OR 通関 OR 半導体 OR レアアース OR 関税)",
+    "AUTO":    "(産業用ロボット OR ファクトリーオートメーション OR 協働ロボット OR 自動化設備 OR 生産自動化) (中国 OR 工場 OR 導入)",
+    "GLOBAL":  "サプライチェーン OR 海運 OR 物流混乱 OR コンテナ船",
+    "FREIGHT": "SCFI OR コンテナ運賃 OR 海上運賃",
 }
 
 
@@ -249,35 +251,118 @@ def render_news(items):
 # ───────────────────────────────────────────────
 #  WeChat配信（Server酱）— 鍵 SERVERCHAN_KEY があるときだけ送る
 # ───────────────────────────────────────────────
-def _msg_line(label, series, unit="", fmt="{:,.0f}"):
+# 重要度マーク用キーワード（営業に効きそうな語＝🔴重要、その他＝🟡注目）
+HIGH_KW = ["規制", "輸出管理", "禁輸", "制裁", "関税", "急騰", "急落",
+           "値上げ", "供給", "停止", "レアアース", "ストライキ", "減産", "増産"]
+
+
+def _mark(title):
+    return "🔴" if any(k in title for k in HIGH_KW) else "🟡"
+
+
+def _news_block(items, n=4):
+    """重要度マーク付き・🔴優先で並べ替えた見出しリスト。無ければ該当なし。"""
+    if not items:
+        return ["・本日は該当なし"]
+    ranked = sorted(items, key=lambda it: 0 if _mark(it[0]) == "🔴" else 1)[:n]
+    return [f"{_mark(t)} {t}" for (t, _l, _ts) in ranked]
+
+
+def _fx_line(label, vals):
+    """為替1行：前日比＋前週比。"""
+    if not vals:
+        return f"{label}：取得失敗"
+    cur = vals[-1]
+    prev = vals[-2] if len(vals) >= 2 else cur
+    wk = vals[-6] if len(vals) >= 6 else vals[0]
+    d = ((cur - prev) / prev * 100) if prev else 0
+    w = ((cur - wk) / wk * 100) if wk else 0
+    a = lambda p: "▲" if p > 0 else ("▼" if p < 0 else "―")
+    return f"{label} {cur:,.2f}　前日{a(d)}{d:+.2f}% / 前週{a(w)}{w:+.2f}%"
+
+
+def _metal_line(label, series, unit="元/t", dollar=False):
     if not series:
         return f"{label}：取得失敗"
     cur = series[-1]
     prev = series[-2] if len(series) >= 2 else cur
-    pct = ((cur - prev) / prev * 100) if prev else 0
-    arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "―")
-    return f"{label} {fmt.format(cur)}{unit}　{arrow}{pct:+.2f}%"
+    p = ((cur - prev) / prev * 100) if prev else 0
+    a = "▲" if p > 0 else ("▼" if p < 0 else "―")
+    val = f"${cur:,.2f}" if dollar else f"{cur:,.0f}{unit}"
+    return f"{label} {val}　{a}{p:+.2f}%"
+
+
+def _pct(series):
+    if not series or len(series) < 2 or not series[-2]:
+        return 0.0
+    return (series[-1] - series[-2]) / series[-2] * 100
+
+
+def metals_comment(nickel, alu):
+    """営業視点の一言（ルールベース。AIではなく値動きから自動生成）。"""
+    parts = []
+    pn = _pct(nickel)
+    if pn < -0.3:
+        parts.append("ニッケル下落→SUS材は弱含み（仕入れ交渉に追い風）")
+    elif pn > 0.3:
+        parts.append("ニッケル上昇→SUS材は強含み（早めの発注検討）")
+    else:
+        parts.append("ニッケル横ばい→SUS材は様子見")
+    pa = _pct(alu)
+    if pa > 0.3:
+        parts.append("アルミ上昇")
+    elif pa < -0.3:
+        parts.append("アルミ下落")
+    return "👉 一言：" + " ／ ".join(parts)
 
 
 def build_summary(usd_vals, cny_vals, nickel, alu, oil, sox, raw_news):
-    """WeChatへ送る朝のまとめ（タイトル, 本文markdown）を作る。"""
-    b = ["**為替**",
-         _msg_line("USD/JPY", usd_vals, fmt="{:,.2f}"),
-         _msg_line("CNY/JPY", cny_vals, fmt="{:,.2f}"),
-         "**金属・市況**",
-         _msg_line("ニッケル 沪镍", nickel, unit="元/t"),
-         _msg_line("アルミ 沪铝", alu, unit="元/t"),
-         _msg_line("原油WTI", oil, fmt="${:,.2f}"),
-         _msg_line("SOX指数", sox)]
-    for key, label in [("SEMI", "半導体"), ("CHINA", "中国・輸出管理"), ("GLOBAL", "世界・物流")]:
-        items = raw_news.get(key, [])[:2]
-        if items:
-            b.append(f"**{label}**")
-            for t, _link, _tstr in items:
-                b.append(f"・{t}")
+    """WeChatへ送る朝のまとめ（タイトル, 本文markdown）を新フォーマットで作る。"""
+    week = "月火水木金土日"[NOW.weekday()]
+    b = []
+
+    # 主な見出し（全カテゴリから🔴優先で上位3）
+    allnews = []
+    for k in ("SEMI", "CHINA", "AUTO", "GLOBAL"):
+        allnews += raw_news.get(k, [])
+    tops = [t for (t, _l, _ts) in allnews if _mark(t) == "🔴"][:3]
+    if not tops:
+        tops = [t for (t, _l, _ts) in allnews][:3]
+    b.append("**【主な見出し】**")
+    b += [f"・{t}" for t in tops] if tops else ["・本日は該当なし"]
+
+    # 為替
+    b.append("**【為替】**")
+    b.append(_fx_line("USD/JPY", usd_vals))
+    b.append(_fx_line("CNY/JPY", cny_vals))
+
+    # 金属・市況（商材順）
+    b.append("**【金属・市況】**")
+    b.append(_metal_line("ニッケル 沪镍", nickel))
+    b.append("モリブデン：無料相場なし（参考→ metal.com/Molybdenum）")
+    b.append(_metal_line("アルミ 沪铝", alu))
+    b.append(_metal_line("原油WTI", oil, dollar=True))
+    b.append(_metal_line("SOX指数", sox, unit=""))
+    b.append(metals_comment(nickel, alu))
+
+    # ニュース各セクション（件数はセクションごとに調整）
+    for key, label, cnt in [("SEMI", "半導体", 4), ("CHINA", "中国・輸出管理", 4),
+                            ("AUTO", "自動化・設備", 3), ("GLOBAL", "世界・物流", 3)]:
+        b.append(f"**【{label}】**")
+        b += _news_block(raw_news.get(key, []), cnt)
+
+    # コンテナ運賃＋祝日
+    fr = raw_news.get("FREIGHT", [])
+    if fr:
+        b.append(f"**【コンテナ運賃】** {fr[0][0]}（詳細→ sse.net.cn）")
+    nh = next_holiday()
+    if nh:
+        days = (nh[0] - NOW.date()).days
+        b.append(f"📅 次の中国連休：{nh[1]} まであと {days} 日")
+
     b.append(f"🧧 春節 {spring_festival()}")
-    b.append(f"▶ ダッシュボード: {DASH_URL}")
-    title = f"🌅 朝のまとめ {NOW.month}/{NOW.day}"
+    b.append(f"▶ {DASH_URL}")
+    title = f"🌅 朝のまとめ {NOW.month}/{NOW.day}（{week}）"
     return title, "\n\n".join(b)
 
 
@@ -313,6 +398,60 @@ def spring_festival():
             days = (cny - today).days
             return f"あと {days} 日（{cny.strftime('%Y-%m-%d')}）"
     return "—"
+
+
+# ───────────────────────────────────────────────
+#  業務カレンダー（中国の祝日・連休／展示会）
+#  ※日付は编集して追加・修正できます。連休範囲は年により调休で前後します。
+# ───────────────────────────────────────────────
+CN_HOLIDAYS = [
+    ("2026-09-25", "中秋節"),
+    ("2026-10-01", "国慶節（物流停止注意・約1週間）"),
+    ("2027-01-01", "元旦"),
+    ("2027-02-06", "春節（物流停止注意・大型連休）"),
+    ("2027-04-05", "清明節"),
+    ("2027-05-01", "労働節"),
+]
+EVENTS = [
+    ("2026-09", "中国国際工業博覧会(CIIF) 上海 ※予定"),
+    ("2026-12", "SEMICON Japan 東京 ※予定"),
+    ("2027-03", "SEMICON China 上海 ※予定"),
+]
+_CLOCK = _SVG.format('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>')
+_BUILDING = _SVG.format('<path d="M2 20h20M4 20V8l8-5 8 5v12M9 20v-6h6v6"/>')
+
+
+def next_holiday():
+    """次に来る中国の祝日 (date, 名前) を返す。無ければ None。"""
+    today = NOW.date()
+    for d, name in CN_HOLIDAYS:
+        hd = datetime.strptime(d, "%Y-%m-%d").date()
+        if hd >= today:
+            return hd, name
+    return None
+
+
+def render_calendar():
+    """ダッシュボードの業務カレンダー欄（<li> の並び）を作る。"""
+    today = NOW.date()
+    rows = []
+    upcoming = [(datetime.strptime(d, "%Y-%m-%d").date(), n) for d, n in CN_HOLIDAYS]
+    upcoming = [(hd, n) for hd, n in upcoming if hd >= today][:3]
+    for i, (hd, name) in enumerate(upcoming):
+        days = (hd - today).days
+        if i == 0:
+            tail = f'<span class="pill">あと {days} 日</span>'
+        else:
+            tail = (f'<span style="margin-left:auto;color:var(--muted);'
+                    f'font-size:12px;">{hd.strftime("%m/%d")}</span>')
+        rows.append(f'<li><span class="ico">{_CLOCK}</span>{name}{tail}</li>')
+    ym_now = NOW.strftime("%Y-%m")
+    for ym, name in EVENTS:
+        if ym >= ym_now:
+            rows.append(f'<li><span class="ico">{_BUILDING}</span>{html.escape(name)}</li>')
+    if not rows:
+        rows.append('<li>予定なし</li>')
+    return "\n".join(rows)
 
 
 # ───────────────────────────────────────────────
@@ -386,7 +525,7 @@ def main():
     ]
 
     # --- ニュース ---
-    raw_news = {k: fetch_news(q) for k, q in FEEDS.items()}
+    raw_news = {k: fetch_news(q, 8) for k, q in FEEDS.items()}
     news = {k: render_news(v) for k, v in raw_news.items()}
 
     # --- テンプレートに流し込み ---
@@ -398,6 +537,7 @@ def main():
     out = out.replace("<!--NEWS_CHINA-->", news["CHINA"])
     out = out.replace("<!--NEWS_GLOBAL-->", news["GLOBAL"])
     out = out.replace("<!--SPRINGFESTIVAL-->", spring_festival())
+    out = out.replace("<!--CALENDAR-->", render_calendar())
     out = out.replace("<!--MEMO-->", load_memo())
 
     with open(os.path.join(ROOT, "index.html"), "w", encoding="utf-8") as f:
